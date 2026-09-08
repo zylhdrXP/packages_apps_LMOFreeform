@@ -12,6 +12,7 @@ import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
+import android.view.animation.PathInterpolator
 import com.libremobileos.freeform.server.LMOFreeformServiceHolder
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -112,7 +113,21 @@ class PillGestureController(
         private const val HYSTERESIS_DP = 14
         private const val PILL_IDLE_WIDTH_DP = 68
         private const val PILL_ACTIVE_WIDTH_DP = 76
+        private const val PILL_PRIMED_WIDTH_DP = 84
         private const val MIN_FLING_VELOCITY_DP = 700
+
+        // Material Design 3 Motion Tokens
+        private val M3_DECELERATE = PathInterpolator(0.05f, 0.7f, 0.1f, 1.0f)
+        private val M3_ACCELERATE = PathInterpolator(0.3f, 0.0f, 0.8f, 0.15f)
+
+        private const val DURATION_PRESS_MS = 150L
+        private const val DURATION_IDLE_RETURN_MS = 220L
+        private const val DURATION_FULLSCREEN_LAUNCH_MS = 140L
+        private const val DURATION_CLOSE_LAUNCH_MS = 120L
+
+        // Physics
+        private const val MAX_PRE_FULLSCREEN_SCALE = 1.05f
+        private const val DOWNWARD_DRAG_RESISTANCE = 0.22f
     }
 
     private val touchSlop = ViewConfiguration.get(pillView.context).scaledTouchSlop
@@ -123,6 +138,8 @@ class PillGestureController(
     private var baseWindowWidth = 0
     private var baseWindowHeight = 0
     private var velocityTracker: VelocityTracker? = null
+    private var isHostBoundsExpanded = false
+    private var pillWidthAnimator: ValueAnimator? = null
 
     init {
         updateAppearance()
@@ -136,6 +153,7 @@ class PillGestureController(
                 startX = event.rawX
                 startY = event.rawY
                 activeAction = null
+                isHostBoundsExpanded = false
                 window.resetTitle(animated = false)
                 captureBaseWindowSize()
                 window.freeformLayout?.animate()?.cancel()
@@ -194,18 +212,40 @@ class PillGestureController(
 
     private fun updateInteractiveScale(deltaX: Float, deltaY: Float) {
         val layout = window.freeformLayout ?: return
-        val scaleDistance = max(baseWindowHeight.takeIf { it > 0 } ?: layout.height, dp(180)).toFloat()
-        val scale = max(0.01f, 1f + deltaY / scaleDistance)
 
-        updateWindowHostBounds(scale)
-
+        // MD3 Center Pivot for balanced, natural scaling
         layout.pivotX = layout.width / 2f
-        layout.pivotY = layout.height.toFloat()
-        layout.scaleX = scale
-        layout.scaleY = scale
-        layout.translationY = if (scale < 1f) deltaY * 0.12f else 0f
-        layout.alpha = if (scale < 1f) scale.coerceIn(0f, 1f) else 1f
+        layout.pivotY = layout.height / 2f
 
+        if (deltaY > 0) {
+            ensureWindowHostBoundsExpanded()
+
+            val dragDistance = dp(200).toFloat()
+            val progress = (deltaY / dragDistance).coerceIn(0f, 1f)
+            val dampedProgress = M3_DECELERATE.getInterpolation(progress)
+
+            val scale = 1f + (MAX_PRE_FULLSCREEN_SCALE - 1f) * dampedProgress
+            val translationY = deltaY * DOWNWARD_DRAG_RESISTANCE
+
+            layout.scaleX = scale
+            layout.scaleY = scale
+            layout.translationY = translationY
+            layout.alpha = 1f
+        } else {
+            val progress = (-deltaY / dp(180).toFloat()).coerceIn(0f, 1f)
+            val dampedProgress = M3_DECELERATE.getInterpolation(progress)
+
+            val scale = max(0.82f, 1f - 0.18f * dampedProgress)
+            val translationY = deltaY * 0.18f
+            val alpha = (1f - 0.35f * dampedProgress).coerceIn(0.65f, 1f)
+
+            layout.scaleX = scale
+            layout.scaleY = scale
+            layout.translationY = translationY
+            layout.alpha = alpha
+        }
+
+        // MD3 Hysteresis Thresholding
         val enterThreshold = swipeThreshold
         val exitThreshold = max(touchSlop, swipeThreshold - dp(HYSTERESIS_DP))
         val isDominantlyVertical = abs(deltaY) > abs(deltaX)
@@ -226,16 +266,24 @@ class PillGestureController(
                 }
             }
         }
+
         if (thresholdAction != activeAction) {
             if (thresholdAction != null) {
                 pillView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
             }
             when (thresholdAction) {
-                PillAction.CloseWindow -> window.updateTitle(FreeformWindow.TITLE_CLOSE, window.closeIcon, directionY = -1f)
-                PillAction.EnterFullscreen -> window.updateTitle(FreeformWindow.TITLE_OPEN_FULL_SCREEN, window.openFullScreenIcon, directionY = 1f)
+                PillAction.CloseWindow -> {
+                    window.updateTitle(FreeformWindow.TITLE_CLOSE, window.closeIcon, directionY = -1f)
+                    animatePillWidth(dp(PILL_ACTIVE_WIDTH_DP))
+                }
+                PillAction.EnterFullscreen -> {
+                    window.updateTitle(FreeformWindow.TITLE_OPEN_FULL_SCREEN, window.openFullScreenIcon, directionY = 1f)
+                    animatePillWidth(dp(PILL_PRIMED_WIDTH_DP))
+                }
                 else -> {
                     val returnDirection = if (activeAction == PillAction.CloseWindow) 1f else -1f
                     window.resetTitle(directionY = returnDirection)
+                    animatePillWidth(dp(PILL_ACTIVE_WIDTH_DP))
                 }
             }
             activeAction = thresholdAction
@@ -248,21 +296,28 @@ class PillGestureController(
         baseWindowHeight = layout.height
     }
 
-    private fun updateWindowHostBounds(scale: Float) {
+    private fun ensureWindowHostBoundsExpanded() {
+        if (isHostBoundsExpanded) return
         val host = window.freeformWindowView ?: return
         val baseWidth = baseWindowWidth.takeIf { it > 0 } ?: window.freeformLayout?.width ?: return
         val baseHeight = baseWindowHeight.takeIf { it > 0 } ?: window.freeformLayout?.height ?: return
-        val expandedScale = max(scale, 1f)
-        window.windowParams.width = ceil(baseWidth * expandedScale).roundToInt()
-        window.windowParams.height = ceil(baseHeight * expandedScale).roundToInt()
-        runCatching { window.windowManager.updateViewLayout(host, window.windowParams) }
+        val targetWidth = ceil(baseWidth * MAX_PRE_FULLSCREEN_SCALE).roundToInt()
+        val targetHeight = ceil(baseHeight * MAX_PRE_FULLSCREEN_SCALE + dp(32)).roundToInt()
+        if (window.windowParams.width != targetWidth || window.windowParams.height != targetHeight) {
+            window.windowParams.width = targetWidth
+            window.windowParams.height = targetHeight
+            runCatching { window.windowManager.updateViewLayout(host, window.windowParams) }
+        }
+        isHostBoundsExpanded = true
     }
 
     private fun resetWindowHostBounds() {
+        if (!isHostBoundsExpanded && window.windowParams.width == ViewGroup.LayoutParams.WRAP_CONTENT) return
         val host = window.freeformWindowView ?: return
         window.windowParams.width = ViewGroup.LayoutParams.WRAP_CONTENT
         window.windowParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
         runCatching { window.windowManager.updateViewLayout(host, window.windowParams) }
+        isHostBoundsExpanded = false
     }
 
     private fun dispatch(action: PillAction) {
@@ -288,11 +343,12 @@ class PillGestureController(
     private fun animateCloseThenRun(endAction: () -> Unit) {
         val layout = window.freeformLayout ?: return endAction()
         layout.animate()
-            .translationYBy(-dp(24).toFloat())
+            .translationY(layout.translationY - dp(24).toFloat())
             .alpha(0f)
-            .scaleX(0.01f)
-            .scaleY(0.01f)
-            .setDuration(120L)
+            .scaleX(0.75f)
+            .scaleY(0.75f)
+            .setDuration(DURATION_CLOSE_LAUNCH_MS)
+            .setInterpolator(M3_ACCELERATE)
             .withEndAction {
                 resetWindowHostBounds()
                 endAction()
@@ -302,12 +358,15 @@ class PillGestureController(
 
     private fun animateFullscreenThenRun(endAction: () -> Unit) {
         val layout = window.freeformLayout ?: return endAction()
-        val targetScale = max(layout.scaleX, 1.12f)
+        val targetScale = max(layout.scaleX + 0.05f, 1.10f)
+        val targetTranslationY = layout.translationY + dp(12)
         layout.animate()
             .alpha(1f)
             .scaleX(targetScale)
             .scaleY(targetScale)
-            .setDuration(90L)
+            .translationY(targetTranslationY)
+            .setDuration(DURATION_FULLSCREEN_LAUNCH_MS)
+            .setInterpolator(M3_DECELERATE)
             .withEndAction {
                 resetWindowHostBounds()
                 endAction()
@@ -326,7 +385,8 @@ class PillGestureController(
             .alpha(1f)
             .scaleX(1f)
             .scaleY(1f)
-            .setDuration(180L)
+            .setDuration(DURATION_IDLE_RETURN_MS)
+            .setInterpolator(M3_DECELERATE)
             .withEndAction { resetWindowHostBounds() }
             .start()
     }
@@ -339,20 +399,28 @@ class PillGestureController(
         plateView.animate().alpha(if (appearance.showPlate) 1f else 0f).setDuration(120L).start()
     }
 
-    private fun animatePressed(pressed: Boolean) {
-        val targetWidth = dp(if (pressed) PILL_ACTIVE_WIDTH_DP else PILL_IDLE_WIDTH_DP)
-        ValueAnimator.ofInt(pillView.layoutParams.width, targetWidth).apply {
-            duration = 120L
+    private fun animatePillWidth(targetWidth: Int) {
+        if (pillView.layoutParams.width == targetWidth) return
+        pillWidthAnimator?.cancel()
+        pillWidthAnimator = ValueAnimator.ofInt(pillView.layoutParams.width, targetWidth).apply {
+            duration = DURATION_PRESS_MS
+            interpolator = M3_DECELERATE
             addUpdateListener { animator ->
                 pillView.layoutParams = pillView.layoutParams.apply { width = animator.animatedValue as Int }
             }
             start()
         }
+    }
+
+    private fun animatePressed(pressed: Boolean) {
+        val targetWidth = dp(if (pressed) PILL_ACTIVE_WIDTH_DP else PILL_IDLE_WIDTH_DP)
+        animatePillWidth(targetWidth)
         pillView.animate()
             .alpha(if (pressed) 1f else 0.72f)
             .scaleX(if (pressed) 1.06f else 1f)
             .scaleY(if (pressed) 1.06f else 1f)
-            .setDuration(120L)
+            .setDuration(DURATION_PRESS_MS)
+            .setInterpolator(M3_DECELERATE)
             .start()
     }
 
