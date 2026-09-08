@@ -109,6 +109,7 @@ class PillGestureController(
 ) : View.OnTouchListener {
     companion object {
         private const val MIN_SWIPE_DP = 40
+        private const val HYSTERESIS_DP = 14
         private const val PILL_IDLE_WIDTH_DP = 68
         private const val PILL_ACTIVE_WIDTH_DP = 76
         private const val MIN_FLING_VELOCITY_DP = 700
@@ -160,7 +161,6 @@ class PillGestureController(
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
-                activeAction = null
                 recycleVelocityTracker()
                 animatePressed(false)
                 animateBackToIdle()
@@ -206,11 +206,25 @@ class PillGestureController(
         layout.translationY = if (scale < 1f) deltaY * 0.12f else 0f
         layout.alpha = if (scale < 1f) scale.coerceIn(0f, 1f) else 1f
 
-        val thresholdAction = when {
-            abs(deltaY) <= abs(deltaX) -> null
-            deltaY < -swipeThreshold -> PillAction.CloseWindow
-            deltaY > swipeThreshold -> PillAction.EnterFullscreen
-            else -> null
+        val enterThreshold = swipeThreshold
+        val exitThreshold = max(touchSlop, swipeThreshold - dp(HYSTERESIS_DP))
+        val isDominantlyVertical = abs(deltaY) > abs(deltaX)
+
+        val thresholdAction = when (activeAction) {
+            PillAction.EnterFullscreen -> {
+                if (isDominantlyVertical && deltaY > exitThreshold) PillAction.EnterFullscreen else null
+            }
+            PillAction.CloseWindow -> {
+                if (isDominantlyVertical && deltaY < -exitThreshold) PillAction.CloseWindow else null
+            }
+            else -> {
+                when {
+                    !isDominantlyVertical -> null
+                    deltaY > enterThreshold -> PillAction.EnterFullscreen
+                    deltaY < -enterThreshold -> PillAction.CloseWindow
+                    else -> null
+                }
+            }
         }
         if (thresholdAction != activeAction) {
             if (thresholdAction != null) {
