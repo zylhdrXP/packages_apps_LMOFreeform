@@ -111,6 +111,7 @@ class PillGestureController(
         private const val MIN_SWIPE_DP = 40
         private const val PILL_IDLE_WIDTH_DP = 68
         private const val PILL_ACTIVE_WIDTH_DP = 76
+        private const val MIN_FLING_VELOCITY_DP = 700
     }
 
     private val touchSlop = ViewConfiguration.get(pillView.context).scaledTouchSlop
@@ -174,13 +175,19 @@ class PillGestureController(
             dispatch(PillAction.Back)
             return
         }
-        if (abs(deltaY) <= abs(deltaX)) {
-            animateBackToIdle()
-            return
-        }
+
+        val flingVelocity = dp(MIN_FLING_VELOCITY_DP).toFloat()
+        val isDominantlyVertical = abs(deltaY) > abs(deltaX)
+
+        val isFlingDown = velocityY > flingVelocity && deltaY > touchSlop && isDominantlyVertical
+        val isFlingUp = velocityY < -flingVelocity && deltaY < -touchSlop && isDominantlyVertical
+
+        val isSwipeDown = deltaY > swipeThreshold && isDominantlyVertical
+        val isSwipeUp = deltaY < -swipeThreshold && isDominantlyVertical
+
         when {
-            deltaY < -swipeThreshold -> dispatch(PillAction.CloseWindow)
-            deltaY > swipeThreshold -> dispatch(PillAction.EnterFullscreen)
+            isFlingUp || isSwipeUp -> dispatch(PillAction.CloseWindow)
+            isFlingDown || isSwipeDown -> dispatch(PillAction.EnterFullscreen)
             else -> animateBackToIdle()
         }
     }
