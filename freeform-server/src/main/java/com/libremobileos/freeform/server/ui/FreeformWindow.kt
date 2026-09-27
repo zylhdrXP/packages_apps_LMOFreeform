@@ -7,6 +7,7 @@ import android.graphics.PixelFormat
 import android.graphics.SurfaceTexture
 import android.os.Build
 import android.os.Handler
+import android.provider.Settings
 import android.util.Slog
 import android.view.Display
 import android.view.DisplayInfo
@@ -112,6 +113,11 @@ class FreeformWindow(
         private const val M3_DURATION_EXIT = 60L
         private const val M3_DURATION_ENTER = 110L
         private const val SHIFT_DP = 4f
+        private const val CONTROL_MODE_SETTING = "freeform_control_mode"
+        private const val CONTROL_MODE_BUTTON = "Button"
+        private const val CONTROL_MODE_GESTURE = "Gesture"
+        private const val LEGACY_BUTTON_MODE = "0"
+        private const val LEGACY_GESTURE_MODE = "1"
     }
 
     init {
@@ -198,6 +204,10 @@ class FreeformWindow(
                 Slog.e(TAG, "freeformLayout is null")
                 destroy("onDisplayAdd:freeformLayout is null")
                 return@post
+            }
+            if (!isGestureMode) {
+                resourceHolder.getLayoutChildViewByTag<View>(layout, "arrowBack")
+                    ?.setOnClickListener(RightViewClickListener(displayId))
             }
         }
     }
@@ -312,15 +322,20 @@ class FreeformWindow(
         val appIconView = resourceHolder.getLayoutChildViewByTag<ImageView>(tmpFreeformLayout, "appIcon")
         val packageNameView = resourceHolder.getLayoutChildViewByTag<TextView>(tmpFreeformLayout, "packageName")
         val pinView = resourceHolder.getLayoutChildViewByTag<View>(tmpFreeformLayout, "pinView")
+        val maximizeView = resourceHolder.getLayoutChildViewByTag<View>(tmpFreeformLayout, "maximizeView")
+        val minimizeView = resourceHolder.getLayoutChildViewByTag<View>(tmpFreeformLayout, "minimizeView")
         val leftScaleView = resourceHolder.getLayoutChildViewByTag<View>(tmpFreeformLayout, "leftScaleView")
         val rightScaleView = resourceHolder.getLayoutChildViewByTag<View>(tmpFreeformLayout, "rightScaleView")
         val gesturePillTouchView = resourceHolder.getLayoutChildViewByTag<View>(tmpFreeformLayout, "gesturePillTouchView")
         val gesturePillView = resourceHolder.getLayoutChildViewByTag<View>(tmpFreeformLayout, "gesturePill")
         val gesturePillPlateView = resourceHolder.getLayoutChildViewByTag<View>(tmpFreeformLayout, "gesturePillPlate")
+        val arrowBackView = resourceHolder.getLayoutChildViewByTag<View>(tmpFreeformLayout, "arrowBack")
         val veilAppIconView = resourceHolder.getLayoutChildViewByTag<ImageView>(tmpFreeformLayout, "veilAppIcon")
         if (null == leftScaleView || null == rightScaleView || null == pinView
                 || null == appIconView || null == packageNameView || null == veilAppIconView
-                || null == gesturePillTouchView || null == gesturePillView || null == gesturePillPlateView) {
+                || null == maximizeView || null == minimizeView
+                || null == gesturePillTouchView || null == gesturePillView || null == gesturePillPlateView
+                || null == arrowBackView) {
             Slog.e(TAG, "freeform chrome view is null")
             destroy("addFreeformView:freeform chrome view is null")
             return false
@@ -330,10 +345,27 @@ class FreeformWindow(
         veilAppIconView.setImageDrawable(appIcon)
         appIconView.setImageDrawable(appIcon)
         packageNameView.text = appPackageName
-        pinView.visibility = View.GONE
+        if (isGestureMode) {
+            pinView.visibility = View.GONE
+            maximizeView.visibility = View.GONE
+            minimizeView.visibility = View.GONE
+            gesturePillTouchView.visibility = View.VISIBLE
+            arrowBackView.visibility = View.GONE
+            gesturePillTouchView.setOnTouchListener(
+                PillGestureController(this, gesturePillView, gesturePillPlateView)
+            )
+        } else {
+            pinView.visibility = View.VISIBLE
+            maximizeView.visibility = View.VISIBLE
+            minimizeView.visibility = View.VISIBLE
+            gesturePillTouchView.visibility = View.GONE
+            arrowBackView.visibility = View.VISIBLE
+            minimizeView.setOnClickListener(LeftViewClickListener(this))
+            maximizeView.setOnClickListener(MaximizeClickListener(this))
+            pinView.setOnClickListener(PinClickListener(this))
+        }
         leftScaleView.setOnTouchListener(ScaleTouchListener(this, false))
         rightScaleView.setOnTouchListener(ScaleTouchListener(this))
-        gesturePillTouchView.setOnTouchListener(PillGestureController(this, gesturePillView, gesturePillPlateView))
 
         freeformView = FreeformTextureView(context).apply {
             setOnTouchListener(this@FreeformWindow)
@@ -705,4 +737,17 @@ class FreeformWindow(
         // Use the same left side positioning as default
         setSidebarAwarePosition()
     }
+
+    private val isGestureMode: Boolean
+        get() {
+            val mode = Settings.System.getString(context.contentResolver, CONTROL_MODE_SETTING)
+            return when {
+                mode == null -> true
+                mode.equals(CONTROL_MODE_BUTTON, ignoreCase = true) ||
+                        mode == LEGACY_BUTTON_MODE -> false
+                mode.equals(CONTROL_MODE_GESTURE, ignoreCase = true) ||
+                        mode == LEGACY_GESTURE_MODE -> true
+                else -> true
+            }
+        }
 }

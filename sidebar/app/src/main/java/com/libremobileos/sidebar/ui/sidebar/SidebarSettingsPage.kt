@@ -8,6 +8,7 @@ package com.libremobileos.sidebar.ui.sidebar
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -32,6 +34,8 @@ import com.android.settingslib.spa.widget.ui.Category
 import com.libremobileos.sidebar.R
 import com.libremobileos.sidebar.bean.SidebarAppInfo
 import com.libremobileos.sidebar.service.SidebarMonitorService
+import com.libremobileos.sidebar.ui.sidebar.SidebarSettingsViewModel.Companion.FREEFORM_BUTTON_MODE
+import com.libremobileos.sidebar.ui.sidebar.SidebarSettingsViewModel.Companion.FREEFORM_GESTURE_MODE
 
 @Composable
 fun SidebarSettingsPage(
@@ -93,6 +97,11 @@ fun SidebarSettingsPage(
                     }
                 }
             )
+
+            FreeformControlModePreference(
+                mode = viewModel.getFreeformControlMode(),
+                onModeChange = viewModel::setFreeformControlMode
+            )
             
             if (autoEnableChecked.value) {
                 val perAppConfigSummary = stringResource(R.string.sidebar_per_app_config_summary)
@@ -121,6 +130,62 @@ fun SidebarSettingsPage(
                 SidebarAppList(viewModel)
             }
         }
+    }
+}
+
+@Composable
+fun FreeformControlModePreference(
+    mode: String,
+    onModeChange: (String) -> Unit
+) {
+    var selectedMode by rememberSaveable { mutableStateOf(mode) }
+    var showDialog by remember { mutableStateOf(false) }
+    val title = stringResource(R.string.sidebar_freeform_control_mode)
+    val gestureLabel = stringResource(R.string.sidebar_freeform_control_gesture)
+    val buttonLabel = stringResource(R.string.sidebar_freeform_control_button)
+    val options = listOf(
+        FREEFORM_GESTURE_MODE to gestureLabel,
+        FREEFORM_BUTTON_MODE to buttonLabel
+    )
+    Preference(
+        model = object : PreferenceModel {
+            override val title = title
+            override val summary = {
+                options.firstOrNull { it.first.equals(selectedMode, ignoreCase = true) }?.second
+                    ?: gestureLabel
+            }
+            override val onClick = { showDialog = true }
+        }
+    )
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text(title) },
+            text = {
+                Column {
+                    options.forEach { (value, label) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selectedMode = value
+                                    onModeChange(value)
+                                    showDialog = false
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedMode.equals(value, ignoreCase = true),
+                                onClick = null
+                            )
+                            Text(label, modifier = Modifier.padding(start = 8.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = {}
+        )
     }
 }
 

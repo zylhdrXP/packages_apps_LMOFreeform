@@ -43,6 +43,15 @@
                 app:layout_constraintEnd_toStartOf="@id/pinView"
                 app:layout_constraintTop_toTopOf="parent"
                 app:layout_constraintBottom_toBottomOf="parent" />
+            <View
+                android:id="@+id/spacer"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:tag="spacer"
+                app:layout_constraintStart_toEndOf="@id/packageName"
+                app:layout_constraintEnd_toStartOf="@id/pinView"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent" />
             <ImageView
                 android:id="@+id/pinView"
                 android:layout_width="24dp"
@@ -50,7 +59,26 @@
                 android:layout_marginEnd="6dp"
                 android:tag="pinView"
                 android:src="@drawable/ic_pin"
-                android:visibility="gone"
+                app:layout_constraintEnd_toStartOf="@id/maximizeView"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent" />
+            <ImageView
+                android:id="@+id/maximizeView"
+                android:layout_width="24dp"
+                android:layout_height="16dp"
+                android:layout_marginEnd="6dp"
+                android:tag="maximizeView"
+                android:src="@drawable/ic_maximize"
+                app:layout_constraintEnd_toStartOf="@id/minimizeView"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent" />
+            <ImageView
+                android:id="@+id/minimizeView"
+                android:layout_width="24dp"
+                android:layout_height="16dp"
+                android:layout_marginEnd="6dp"
+                android:tag="minimizeView"
+                android:src="@drawable/ic_minimize"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintTop_toTopOf="parent"
                 app:layout_constraintBottom_toBottomOf="parent" />
@@ -141,6 +169,23 @@
             </FrameLayout>
 
             <LinearLayout
+                android:id="@+id/arrowBack"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:tag="arrowBack"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toStartOf="@+id/guideline3"
+                app:layout_constraintStart_toStartOf="@+id/guideline2"
+                app:layout_constraintTop_toTopOf="parent">
+                <View
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:background="@drawable/ic_arrow_back" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:id="@+id/rightScale"
                 android:layout_width="@dimen/scale_width"
                 android:layout_height="0dp"
@@ -157,6 +202,21 @@
                     android:background="@drawable/bar_corners_bg"
                     android:tag="rightScale" />
             </LinearLayout>
+
+            <androidx.constraintlayout.widget.Guideline
+                android:id="@+id/guideline2"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                app:layout_constraintGuide_percent="0.33"
+                android:tag="guideline2" />
+            <androidx.constraintlayout.widget.Guideline
+                android:id="@+id/guideline3"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                app:layout_constraintGuide_percent="0.67"
+                android:tag="guideline3" />
 
         </androidx.constraintlayout.widget.ConstraintLayout>
     </androidx.constraintlayout.widget.ConstraintLayout>

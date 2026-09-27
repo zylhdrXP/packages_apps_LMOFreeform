@@ -11,6 +11,7 @@ import android.content.SharedPreferences
 import android.content.pm.LauncherApps
 import android.os.UserHandle
 import android.os.UserManager
+import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -141,6 +142,28 @@ class SidebarSettingsViewModel(private val application: Application) : AndroidVi
             .putBoolean(SidebarMonitorService.KEY_AUTO_ENABLE_SELECTED_APPS, enabled)
             .apply()
 
+    fun getFreeformControlMode(): String =
+        Settings.System.getString(
+            appContext.contentResolver,
+            FREEFORM_CONTROL_MODE
+        )?.let {
+            when {
+                it.equals(FREEFORM_BUTTON_MODE, ignoreCase = true) ||
+                        it == LEGACY_BUTTON_MODE -> FREEFORM_BUTTON_MODE
+                it.equals(FREEFORM_GESTURE_MODE, ignoreCase = true) ||
+                        it == LEGACY_GESTURE_MODE -> FREEFORM_GESTURE_MODE
+                else -> FREEFORM_GESTURE_MODE
+            }
+        } ?: FREEFORM_GESTURE_MODE
+
+    fun setFreeformControlMode(mode: String) {
+        Settings.System.putString(
+            appContext.contentResolver,
+            FREEFORM_CONTROL_MODE,
+            mode
+        )
+    }
+
     private fun initAllAppList() {
         initJob?.cancel()
         initJob = viewModelScope.launch(Dispatchers.IO) {
@@ -179,6 +202,12 @@ class SidebarSettingsViewModel(private val application: Application) : AndroidVi
     }
 
     companion object {
+        private const val FREEFORM_CONTROL_MODE = "freeform_control_mode"
+        const val FREEFORM_BUTTON_MODE = "Button"
+        const val FREEFORM_GESTURE_MODE = "Gesture"
+        private const val LEGACY_BUTTON_MODE = "0"
+        private const val LEGACY_GESTURE_MODE = "1"
+
         val Factory = viewModelFactory {
             initializer {
                 SidebarSettingsViewModel(

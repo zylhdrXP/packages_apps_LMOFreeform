@@ -13,6 +13,9 @@
     <string name="sidebar_auto_enable_selected_apps_summary">Automatically show sidebar when configured apps are launched</string>
     <string name="sidebar_per_app_config">Configure apps</string>
     <string name="sidebar_per_app_config_summary">Select apps that should automatically enable sidebar</string>
+    <string name="sidebar_freeform_control_mode">Freeform control mode</string>
+    <string name="sidebar_freeform_control_gesture">Gesture</string>
+    <string name="sidebar_freeform_control_button">Button</string>
 
     <!-- Sidebar customization -->
     <string name="sidebar_customization_title">Sidebar customization</string>
